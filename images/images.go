@@ -16,6 +16,7 @@ type Config struct {
 	KubeConfig string
 	NameSpace  string
 	All        bool
+	client     kubernetes.Interface
 }
 
 type image struct {
@@ -30,20 +31,31 @@ func (con *Config) GetImages(c *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	clientset, err := kubernetes.NewForConfig(config)
+	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
+	con.client = client
+	podImages, err := con.fetchImagesWithClient()
+	if err != nil {
+		return err
+	}
+	for _, img := range unique(podImages) {
+		fmt.Printf("Namespace:%s\tImage:%s\n", img.Namespace, img.Image)
+	}
+	return nil
+}
 
-	if con.All {
+func (c *Config) fetchImagesWithClient() ([]image, error) {
+	if c.All {
 		namespace = ""
 	} else {
-		namespace = con.NameSpace
+		namespace = c.NameSpace
 	}
-	
-	pods, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+
+	pods, err := c.client.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	podImages := make([]image, 0)
@@ -53,11 +65,8 @@ func (con *Config) GetImages(c *cobra.Command, args []string) error {
 		podImages = append(podImages, initImages...)
 		podImages = append(podImages, containerImages...)
 	}
-	for _, img := range unique(podImages) {
-		fmt.Println(img)
-	}
 
-	return nil
+	return podImages, nil
 }
 
 func getImagesFromContainers(namespace string, containers []corev1.Container) []image {
